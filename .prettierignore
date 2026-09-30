@@ -1,0 +1,7 @@
+node_modules/
+coverage/
+dist/
+package-lock.json
+src/routeTree.gen.ts
+# Vendored shadcn output stays as generated so `shadcn add --diff` stays readable.
+src/components/ui/

@@ -1,0 +1,280 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+/* In-app "Reduce animations" switch mirrors prefers-reduced-motion. */
+@custom-variant motion-reduced (&:is([data-motion="reduced"] *));
+
+/*
+ * Design tokens (Metalix UI/UX system). Components use semantic classes only:
+ * bg-success is allowed, bg-green-500 is not.
+ */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans:
+    "Inter Variable", "Noto Sans Devanagari", "Noto Sans Gujarati", ui-sans-serif, system-ui, sans-serif;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Motion: feedback only, 100-300 ms, never above 400 ms. */
+  --duration-fast: 100ms;
+  --duration-base: 150ms;
+  --duration-moderate: 200ms;
+  --duration-slow: 300ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.38, 0.9);
+  --ease-enter: cubic-bezier(0, 0, 0.38, 0.9);
+  --ease-exit: cubic-bezier(0.2, 0, 1, 0.9);
+  --ease-emphasized-enter: cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+:root {
+  color-scheme: light;
+  --radius: 0.5rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.18 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0 0);
+  /* Steel blue: the only hue in the chrome. */
+  --primary: oklch(0.45 0.1 235);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0 0);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.967 0 0);
+  /* Darkened from shadcn's 0.556 so helper text passes AA on --muted. */
+  --muted-foreground: oklch(0.48 0 0);
+  --accent: oklch(0.95 0.02 235);
+  --accent-foreground: oklch(0.25 0.05 235);
+  --destructive: oklch(0.577 0.245 27.3);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.5 0.12 150);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.84 0.16 84);
+  --warning-foreground: oklch(0.28 0.07 46);
+  --info: oklch(0.52 0.15 255);
+  --info-foreground: oklch(0.985 0 0);
+  --border: oklch(0.9 0 0);
+  /* Form control borders need >= 3:1 against white. */
+  --input: oklch(0.62 0 0);
+  --ring: oklch(0.45 0.1 235);
+
+  --chart-1: oklch(0.55 0.13 240);
+  --chart-2: oklch(0.7 0.16 55);
+  --chart-3: oklch(0.6 0.11 170);
+  --chart-4: oklch(0.55 0.15 300);
+  --chart-5: oklch(0.6 0 0);
+
+  --sidebar: oklch(0.975 0.003 235);
+  --sidebar-foreground: oklch(0.18 0 0);
+  --sidebar-primary: oklch(0.45 0.1 235);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.93 0.025 235);
+  --sidebar-accent-foreground: oklch(0.22 0.05 235);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.45 0.1 235);
+}
+
+.dark {
+  /* Native scrollbars, date pickers and autofill follow the dark theme. */
+  color-scheme: dark;
+  --background: oklch(0.16 0 0);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.2 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.2 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.72 0.11 235);
+  --primary-foreground: oklch(0.18 0.02 235);
+  --secondary: oklch(0.26 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.26 0 0);
+  --muted-foreground: oklch(0.72 0 0);
+  --accent: oklch(0.3 0.04 235);
+  --accent-foreground: oklch(0.97 0 0);
+  --destructive: oklch(0.704 0.191 22.2);
+  --destructive-foreground: oklch(0.18 0 0);
+  --success: oklch(0.72 0.15 150);
+  --success-foreground: oklch(0.2 0.03 150);
+  --warning: oklch(0.41 0.11 46);
+  --warning-foreground: oklch(0.99 0.02 95);
+  --info: oklch(0.72 0.12 250);
+  --info-foreground: oklch(0.18 0.03 250);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(0.55 0 0);
+  --ring: oklch(0.72 0.11 235);
+
+  --chart-1: oklch(0.67 0.13 240);
+  --chart-2: oklch(0.82 0.16 55);
+  --chart-3: oklch(0.72 0.11 170);
+  --chart-4: oklch(0.67 0.15 300);
+  --chart-5: oklch(0.72 0 0);
+
+  --sidebar: oklch(0.19 0 0);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.72 0.11 235);
+  --sidebar-primary-foreground: oklch(0.18 0.02 235);
+  --sidebar-accent: oklch(0.28 0.03 235);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0.11 235);
+}
+
+/* Sunlight theme: maximum contrast and larger text for outdoor use in the yard. */
+.contrast:not(.dark) {
+  --foreground: oklch(0 0 0);
+  --card-foreground: oklch(0 0 0);
+  --popover-foreground: oklch(0 0 0);
+  --muted-foreground: oklch(0.35 0 0);
+  --input: oklch(0.35 0 0);
+  --border: oklch(0.75 0 0);
+  --sidebar-foreground: oklch(0 0 0);
+}
+html.contrast {
+  font-size: 17px;
+}
+.contrast [data-slot="input"],
+.contrast [data-slot="input-group"],
+.contrast [data-slot="select-trigger"],
+.contrast [data-slot="combobox-trigger"] {
+  border-width: 2px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  :lang(hi),
+  :lang(gu) {
+    line-height: 1.6;
+  }
+}
+
+/*
+ * WCAG 2.4.7 / 1.4.11: a solid 2 px focus outline on every keyboard-focused control, whatever
+ * its own (50% alpha) ring. Unlayered, so it wins over utilities such as outline-none. Text
+ * fields keep their border + ring; menu and list options show focus with their highlight.
+ */
+:where(
+  a[href],
+  button,
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="radio"],
+  [role="checkbox"],
+  [role="switch"]
+):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* WCAG 2.4.11: the sticky header (and the phone bottom bar) never cover the focused element. */
+html {
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: 1rem;
+}
+@media (width < 48rem) {
+  html {
+    scroll-padding-bottom: 5.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-property: color, background-color, border-color, opacity !important;
+    transition-duration: 100ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] ::before,
+html[data-motion="reduced"] ::after {
+  transition-property: color, background-color, border-color, opacity !important;
+  transition-duration: 100ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* A freshly saved row: success tint held for 1 s, then faded over 1.5 s. */
+@keyframes row-saved {
+  0%,
+  40% {
+    background-color: color-mix(in oklch, var(--success) 12%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.row-saved {
+  animation: row-saved 2500ms var(--ease-standard);
+}
+
+/* Indeterminate top progress line while a list refreshes behind its current rows. */
+@keyframes progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
