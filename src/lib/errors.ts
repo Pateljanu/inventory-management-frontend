@@ -23,6 +23,7 @@ const MESSAGES: Record<string, string> = {
   PURCHASE_NOT_FOUND: "This purchase no longer exists.",
   PO_NOT_FOUND: "This sales order no longer exists.",
   SALE_NOT_FOUND: "This delivery no longer exists.",
+  NOTHING_TO_SETTLE: "Nothing is left from this supplier for this material, so there is nothing to settle.",
 }
 
 export function errorMessage(error: unknown, fallback = "Something went wrong. Try again."): string {

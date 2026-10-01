@@ -74,7 +74,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           <AlertDialogHeader>
             <AlertDialogTitle>{current?.title}</AlertDialogTitle>
             {current?.description ? (
-              <AlertDialogDescription>{current.description}</AlertDialogDescription>
+              <AlertDialogDescription render={<div />}>{current.description}</AlertDialogDescription>
             ) : null}
           </AlertDialogHeader>
           {error ? (

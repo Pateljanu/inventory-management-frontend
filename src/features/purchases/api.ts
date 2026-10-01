@@ -1,6 +1,6 @@
 import { keepPreviousData, queryOptions, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api-client"
-import type { Paginated, Purchase, Saved } from "@/types/api"
+import type { Paginated, Purchase, Saved, SettlePlan } from "@/types/api"
 
 export type PurchaseListParams = {
   page?: number
@@ -68,6 +68,24 @@ export function useSavePurchase() {
         : api.post<Saved<Purchase>>("/purchases", input)
       ).then((r) => r.data),
     // Purchases change stock, supplier stock, the dashboard and material pages.
+    onSuccess: () => queryClient.invalidateQueries(),
+  })
+}
+
+export type SettlePool = { companyId: string; materialId: string }
+
+/** What settling a supplier pool would change right now (always fetched fresh). */
+export const fetchSettlePreview = (pool: SettlePool) =>
+  api.get<SettlePlan>("/purchases/settle", pool).then((r) => r.data)
+
+/**
+ * Sets a supplier pool's leftover to zero by trimming its purchases to what was delivered.
+ * Purchases, stock, supplier stock and every report change, so everything is refetched.
+ */
+export function useSettlePool() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (pool: SettlePool) => api.post<SettlePlan>("/purchases/settle", pool).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries(),
   })
 }

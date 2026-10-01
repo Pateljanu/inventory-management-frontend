@@ -96,11 +96,34 @@ export type Purchase = {
   quantityTons: Decimal
   ratePerTon: Decimal
   totalAmount: Decimal
+  /** Tons first booked, kept when a settle trimmed quantityTons to what was delivered. */
+  bookedTons?: Decimal
   vehicleNumber?: string
   invoiceNumber?: string
   notes?: string
   createdAt: IsoDate
   updatedAt: IsoDate
+}
+
+/** GET/POST /purchases/settle: what settling one supplier + material pool changes. */
+export type SettlePlan = {
+  companyId: string
+  materialId: string
+  purchasedTons: Decimal
+  usedTons: Decimal
+  leftTons: Decimal
+  changes: {
+    purchaseId: string
+    purchaseDate: string
+    invoiceNumber: string | null
+    vehicleNumber: string | null
+    ratePerTon: Decimal
+    bookedTons: Decimal
+    fromTons: Decimal
+    toTons: Decimal
+    fromAmount: Decimal
+    toAmount: Decimal
+  }[]
 }
 
 export type POLifecycle = "ACTIVE" | "CANCELLED"

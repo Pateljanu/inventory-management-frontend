@@ -19,6 +19,7 @@ import { useEntityOption } from "@/features/lookups/entity"
 import { useSession } from "@/features/auth/session"
 import { useHighlight } from "@/hooks/use-highlight"
 import { can } from "@/lib/permissions"
+import { cmp } from "@/lib/decimal"
 import { describeRange } from "@/lib/fy"
 import { DASH, formatCount, formatDate, formatMoney, formatTons } from "@/lib/format"
 import { DEFAULT_PAGE_SIZE, resetPage } from "@/lib/list-search"
@@ -27,6 +28,12 @@ import type { Purchase } from "@/types/api"
 const helper = createAppColumnHelper<Purchase>()
 
 const muted = (v?: string) => (v ? v : <span className="text-muted-foreground">{DASH}</span>)
+
+/** "booked 30.000" under the tons when a settle trimmed the purchase to what was delivered. */
+function BookedNote({ purchase }: { purchase: Purchase }) {
+  if (!purchase.bookedTons || cmp(purchase.bookedTons, purchase.quantityTons) === 0) return null
+  return <span className="block text-xs text-muted-foreground">booked {formatTons(purchase.bookedTons)}</span>
+}
 
 export function PurchasesPage({ search }: { search: PurchasesSearch }) {
   const navigate = useNavigate({ from: "/purchases/" })
@@ -108,7 +115,12 @@ export function PurchasesPage({ search }: { search: PurchasesSearch }) {
     }),
     helper.accessor("quantityTons", {
       header: "Tons (t)",
-      cell: (info) => formatTons(info.getValue()),
+      cell: (info) => (
+        <>
+          {formatTons(info.getValue())}
+          <BookedNote purchase={info.row.original} />
+        </>
+      ),
       meta: { align: "end", label: "Tons" },
     }),
     helper.accessor("ratePerTon", {
@@ -262,7 +274,10 @@ export function PurchasesPage({ search }: { search: PurchasesSearch }) {
           >
             <div className="text-muted-foreground">{p.materialId.name}</div>
             <div className="flex items-baseline justify-between tabular-nums">
-              <span>{formatTons(p.quantityTons, { unit: true })}</span>
+              <span>
+                {formatTons(p.quantityTons, { unit: true })}
+                <BookedNote purchase={p} />
+              </span>
               <span className="font-semibold">{formatMoney(p.totalAmount)}</span>
             </div>
           </RecordCard>
