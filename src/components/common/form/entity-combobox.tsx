@@ -3,7 +3,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefCallback,
 } from "react"
@@ -90,6 +92,9 @@ export function EntityCombobox({
   const canCreate = allowCreate && !options
   // Our own handle on the input (focus comes back here after "+ Add"), shared with the caller's ref.
   const ownInput = useRef<HTMLInputElement | null>(null)
+  // With a record chosen, focusing or clicking the box selects its whole name, so typing replaces
+  // it ("Shree" instead of "Akshar ispatShree", which matches nothing).
+  const keepSelection = useRef(false)
   const setInput = useCallback(
     (el: HTMLInputElement | null) => {
       ownInput.current = el
@@ -112,6 +117,9 @@ export function EntityCombobox({
     const withValue = value && !list.some((o) => o._id === value._id) ? [value, ...list] : list
     return canCreate ? [...withValue, { _id: CREATE_ID, name: q }] : withValue
   }, [list, value, canCreate, q])
+  // ...but it isn't shown while it doesn't match what is typed: otherwise it sits first, and
+  // ↓ + Enter after typing a new name picks the old record again.
+  const hiddenId = value && q && !list.some((o) => o._id === value._id) ? value._id : null
 
   const searching = options ? Boolean(optionsLoading) : remote.isFetching && !remote.data
   const loadError = options ? null : remote.error
@@ -161,6 +169,19 @@ export function EntityCombobox({
           )}
           autoComplete="off"
           aria-keyshortcuts={canCreate ? "Alt+C" : undefined}
+          onFocus={(event: FocusEvent<HTMLInputElement>) => {
+            if (value) event.currentTarget.select()
+          }}
+          onMouseDown={() => {
+            // Only the click that opens the list; a click while typing places the cursor as usual.
+            keepSelection.current = Boolean(value) && !open
+          }}
+          onMouseUp={(event: MouseEvent<HTMLInputElement>) => {
+            if (!keepSelection.current) return
+            keepSelection.current = false
+            event.preventDefault()
+            event.currentTarget.select()
+          }}
           onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
             // Alt+C, as in Tally: create the company or material that isn't in the list yet.
             if (canCreate && event.altKey && event.code === "KeyC") {
@@ -183,7 +204,7 @@ export function EntityCombobox({
               Couldn&apos;t load {noun}. Close and try again.
             </div>
           ) : null}
-          {canCreate && noMatches ? (
+          {(canCreate || hiddenId) && noMatches ? (
             <div className="px-3 pt-2 text-sm text-muted-foreground">
               No {noun} match{q ? ` "${q}"` : ""}.
             </div>
@@ -191,7 +212,7 @@ export function EntityCombobox({
           <ComboboxEmpty>{searching ? null : `No ${noun} match${q ? ` "${q}"` : ""}.`}</ComboboxEmpty>
           <ComboboxList>
             {(option: EntityOption) =>
-              option._id === CREATE_ID ? (
+              option._id === hiddenId ? null : option._id === CREATE_ID ? (
                 <ComboboxItem
                   key={CREATE_ID}
                   value={option}

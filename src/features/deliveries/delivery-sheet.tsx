@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, useWatch } from "react-hook-form"
@@ -181,7 +181,9 @@ function DeliveryForm({
   const save = useSaveDelivery()
   const [formMessage, setFormMessage] = useState<string | null>(null)
   const [focusKey, setFocusKey] = useState(0)
-  const [lastUsed] = useState(() => readLastUsed<LastUsed>(LAST_KEY))
+  const [lastUsed, setLastUsed] = useState(() => readLastUsed<LastUsed>(LAST_KEY))
+  /** "Save & add another": the next entry, applied once the submit has fully finished. */
+  const nextEntry = useRef<Values | null>(null)
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -193,7 +195,9 @@ function DeliveryForm({
   const draft = useFormDraft(form, {
     name: "delivery",
     context: draftContext ?? "",
-    enabled: Boolean(draftContext),
+    // Only while the sheet is open: a closed sheet stays mounted, and the refetch after a save
+    // refills its fields, which would otherwise leave the saved delivery behind as a "draft".
+    enabled: Boolean(draftContext) && open,
   })
   const [changingOrder, setChangingOrder] = useState(() => !initial.po && !draft.restored?.values.po)
   const [po, saleDate, source, tons] = useWatch({
@@ -202,7 +206,8 @@ function DeliveryForm({
   })
 
   const order = useQuery({ ...salesOrderQuery(po?._id ?? ""), enabled: Boolean(po) })
-  const orders = useQuery({ ...openOrderOptionsQuery(), enabled: changingOrder })
+  // Whenever the picker shows: also after "Start over" empties a restored order.
+  const orders = useQuery({ ...openOrderOptionsQuery(), enabled: changingOrder || !po })
   // An order opened from a link is known by id until its number loads. Keyed on id and name:
   // useWatch returns a fresh copy of the object on every form update, and the picker treats a
   // new object as a new value (re-syncing on each render, in a loop).
@@ -270,20 +275,39 @@ function DeliveryForm({
   // Effects depend on ids, never on watched objects: useWatch hands back a fresh copy after
   // every form update, so an object dependency would re-run the effect (and setValue) forever.
   const sourceId = source?._id
+  // Tons the user typed (or brought back in a draft) stay; tons the form filled in follow the
+  // limits. Not the field's dirty flag: merely leaving the box marks a filled-in value as dirty.
+  const autoTons = useRef<string | null>(null)
+  const tonsTyped = () => {
+    const tons = form.getValues("quantityTons")
+    return tons !== "" && tons !== autoTons.current
+  }
+
+  // Filled-in values re-check a field that shows an error, so a stale message doesn't stay put.
   useEffect(() => {
-    if (isEdit || sourceId || !capacity.data || capacity.data.poId !== poId) return
+    if (!open || isEdit || sourceId || !capacity.data || capacity.data.poId !== poId) return
     const withStock = capacity.data.sources.filter((s) => s.isActive && isPositive(s.availableTons))
     const pick =
       withStock.find((s) => s.sourceCompanyId === lastUsed?.source?._id) ??
       (withStock.length === 1 ? withStock[0] : undefined)
-    if (pick) setValue("source", { _id: pick.sourceCompanyId, name: pick.name }, { shouldDirty: false })
-  }, [isEdit, sourceId, capacity.data, poId, lastUsed, setValue])
+    if (pick)
+      setValue(
+        "source",
+        { _id: pick.sourceCompanyId, name: pick.name },
+        { shouldDirty: false, shouldValidate: Boolean(getFieldState("source").error) }
+      )
+  }, [open, isEdit, sourceId, capacity.data, poId, lastUsed, getFieldState, setValue])
 
   useEffect(() => {
-    if (isEdit || !current || !sourceId || getFieldState("quantityTons").isDirty) return
+    if (!open || isEdit || !current || !sourceId || tonsTyped()) return
     const max = toBig(current.maxAllowedTons)
-    setValue("quantityTons", max.gt(0) ? max.toString() : "", { shouldDirty: false })
-  }, [isEdit, current, sourceId, getFieldState, setValue])
+    autoTons.current = max.gt(0) ? max.toString() : ""
+    setValue("quantityTons", autoTons.current, {
+      shouldDirty: false,
+      shouldValidate: Boolean(getFieldState("quantityTons").error),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tonsTyped reads refs and form values
+  }, [open, isEdit, current, sourceId, getFieldState, setValue])
 
   // An edited delivery keeps its own rate unless it moves to another order.
   const rate =
@@ -344,7 +368,9 @@ function DeliveryForm({
     try {
       const saved = await save.mutateAsync({ id: editing?._id, input: toInput(values) })
       draft.clear()
-      writeLastUsed<LastUsed>(LAST_KEY, { source: { _id: values.source!._id, name: values.source!.name } })
+      const used: LastUsed = { source: { _id: values.source!._id, name: values.source!.name } }
+      writeLastUsed<LastUsed>(LAST_KEY, used)
+      setLastUsed(used)
       const buyer = order.data?.companyId.name
       notify.success(isEdit ? "Delivery updated" : "Delivery saved", {
         description: `${formatTons(saved.quantityTons, { unit: true })} of ${material}${buyer ? ` to ${buyer}` : ""} · ${formatMoney(saved.totalAmount)}`,
@@ -354,9 +380,20 @@ function DeliveryForm({
         },
       })
       if (another) {
-        // Next truck on the same order: keep order, date and supplier; tons refill with the new max.
-        form.reset({ ...blankValues(), po: values.po, saleDate: values.saleDate, source: values.source })
-        window.setTimeout(() => form.setFocus("quantityTons"), 50)
+        // Next truck: keep the order, date and supplier; tons refill with the new max. An order this
+        // delivery finished, or a supplier it emptied, can't take the next truck: choose again.
+        // (Numbers from before the save, less what was just delivered.)
+        const orderDone = order.data
+          ? !toBig(order.data.remainingQuantityTons).minus(saved.quantityTons).gt(0)
+          : false
+        const pool = poolOf(current)
+        const sourceEmpty = pool ? !toBig(pool.availableTons).minus(saved.quantityTons).gt(0) : false
+        nextEntry.current = {
+          ...blankValues(),
+          po: orderDone ? null : values.po,
+          saleDate: values.saleDate,
+          source: orderDone || sourceEmpty ? null : values.source,
+        }
       }
       onSaved(saved, { another })
     } catch (error) {
@@ -429,13 +466,21 @@ function DeliveryForm({
   }
 
   // "Save & add another" is told apart by the button that submitted the form (Ctrl+Enter = plain save).
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLElement | null
     const another = submitter?.dataset.another === "true"
-    return form.handleSubmit(
+    await form.handleSubmit(
       (values) => submit(values, another),
       () => setFocusKey((k) => k + 1)
     )(event)
+    // Reset only now: handleSubmit marks the form submitted when it finishes, and a reset inside
+    // it would leave the next entry "submitted" (live errors, no unsaved-changes prompt on close).
+    const next = nextEntry.current
+    if (!next) return
+    nextEntry.current = null
+    form.reset(next)
+    if (!next.po) setChangingOrder(true)
+    window.setTimeout(() => form.setFocus(!next.po ? "po" : !next.source ? "source" : "quantityTons"), 50)
   }
 
   const summary = [
@@ -534,7 +579,7 @@ function DeliveryForm({
                         field.onChange(next)
                         // Another order may be another material: its suppliers and limits differ.
                         setValue("source", null)
-                        if (!getFieldState("quantityTons").isDirty) setValue("quantityTons", "")
+                        if (!tonsTyped()) setValue("quantityTons", "")
                         if (next) setChangingOrder(false)
                       }}
                       onBlur={field.onBlur}
