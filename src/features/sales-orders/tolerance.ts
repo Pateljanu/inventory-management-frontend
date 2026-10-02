@@ -2,7 +2,7 @@ import { isPositive, minus, toBig } from "@/lib/decimal"
 import type { SalesPO } from "@/types/api"
 
 /** Pre-filled on new orders: deliveries may go this far beyond the ordered tons. */
-export const DEFAULT_TOLERANCE_PERCENT = "5"
+export const DEFAULT_TOLERANCE_PERCENT = "10"
 export const MAX_TOLERANCE_PERCENT = 50
 
 /** Ordered tons plus the tolerance, rounded down to 3 decimals (the same rule as the server). */
