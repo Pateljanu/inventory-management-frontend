@@ -138,9 +138,15 @@ export type SalesPO = {
   quantityTons: Decimal
   ratePerTon: Decimal
   totalPOAmount: Decimal
+  /** ± share of the ordered tons that may be delivered beyond them; missing = none. */
+  tolerancePercent?: Decimal
+  /** Tons first ordered, kept when a settle set quantityTons to what was delivered. */
+  originalQuantityTons?: Decimal
   lifecycleStatus: POLifecycle
   soldQuantityTons: Decimal
   remainingQuantityTons: Decimal
+  /** Delivered beyond the ordered tons (within the tolerance). */
+  extraQuantityTons?: Decimal
   displayStatus: PODisplayStatus
   notes?: string
   createdAt: IsoDate
@@ -174,7 +180,12 @@ export type SaleCapacity = {
   poOpen: boolean
   materialId: string
   saleDate: string
+  /** Ordered tons not delivered yet. */
   remainingQuantityTons: Decimal
+  /** The order's tolerance in percent. */
+  tolerancePercent?: Decimal
+  /** What the order still takes: ordered + tolerance − delivered. This is the PO limit. */
+  poAllowanceTons?: Decimal
   /** Yard stock that is free on the sale date and every later day. */
   availableStockTons: Decimal
   /** Same for the chosen supplier's stock; null when no supplier is chosen. */

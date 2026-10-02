@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Ban, ClipboardList, Pencil, RotateCcw, Truck } from "lucide-react"
+import { Ban, CheckCheck, ClipboardList, Pencil, RotateCcw, Truck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -14,6 +14,8 @@ import { ErrorState } from "@/components/common/error-state"
 import { OrderSheet } from "./order-sheet"
 import { DeliverButton, OrderProgress } from "./order-parts"
 import { isOpenOrder, useOrderLifecycle } from "./order-lifecycle"
+import { canSettleOrder, maxDeliverable, settledShortBy } from "./tolerance"
+import { isPositive } from "@/lib/decimal"
 import { orderDeliveriesQuery, salesOrderQuery } from "./api"
 import { useSession } from "@/features/auth/session"
 import { can } from "@/lib/permissions"
@@ -32,13 +34,16 @@ export function OrderDetailPage({ orderId, editing }: { orderId: string; editing
   const navigate = useNavigate({ from: "/sales-orders/$orderId" })
   const { user } = useSession()
   const canWrite = can(user, "write")
-  const { cancel, reopen } = useOrderLifecycle()
+  const { cancel, settle, reopen } = useOrderLifecycle()
   const { data: po, error, refetch } = useQuery(salesOrderQuery(orderId))
 
   if (!po) return error ? <ErrorState error={error} onRetry={() => refetch()} /> : null
 
   const setEditing = (on: boolean) => navigate({ search: { edit: on || undefined } })
   const open = isOpenOrder(po)
+  const tolerance = po.tolerancePercent && isPositive(po.tolerancePercent) ? po.tolerancePercent : null
+  const extra = po.extraQuantityTons && isPositive(po.extraQuantityTons) ? po.extraQuantityTons : null
+  const short = settledShortBy(po)
 
   return (
     <>
@@ -68,6 +73,11 @@ export function OrderDetailPage({ orderId, editing }: { orderId: string; editing
               <Button variant="outline" className="h-10 md:h-9" onClick={() => setEditing(true)}>
                 <Pencil /> Edit
               </Button>
+              {canSettleOrder(po) ? (
+                <Button variant="outline" className="h-10 md:h-9" onClick={() => settle(po)}>
+                  <CheckCheck /> Settle
+                </Button>
+              ) : null}
               {po.lifecycleStatus === "ACTIVE" ? (
                 <Button variant="outline" className="h-10 md:h-9" onClick={() => cancel(po)}>
                   <Ban /> Cancel order
@@ -89,7 +99,15 @@ export function OrderDetailPage({ orderId, editing }: { orderId: string; editing
         <StatCard
           label="Ordered"
           value={formatTons(po.quantityTons, { unit: true })}
-          footnote={`at ${formatRate(po.ratePerTon)}`}
+          footnote={[
+            `at ${formatRate(po.ratePerTon)}`,
+            tolerance
+              ? `±${Number(tolerance)}% (up to ${formatTons(maxDeliverable(po.quantityTons, tolerance), { unit: true })})`
+              : null,
+            short ? `first ordered ${formatTons(po.originalQuantityTons, { unit: true })}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
         <StatCard
           label="Delivered"
@@ -107,14 +125,18 @@ export function OrderDetailPage({ orderId, editing }: { orderId: string; editing
               ? "Cancelled: no more deliveries"
               : open
                 ? "Still to send"
-                : "Fully delivered"
+                : extra
+                  ? `Completed · +${formatTons(extra, { unit: true })} extra delivered`
+                  : short
+                    ? `Settled · ${formatTons(short, { unit: true })} short`
+                    : "Fully delivered"
           }
         />
         <StatCard
           label="Order value"
           value={formatMoneyCompact(po.totalPOAmount)}
           exactValue={formatMoney(po.totalPOAmount)}
-          footnote="Ordered tons × current rate"
+          footnote="Ordered tons × current rate; deliveries keep their own rate"
         />
       </section>
 

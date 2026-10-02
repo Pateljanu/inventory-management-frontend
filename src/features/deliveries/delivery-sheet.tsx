@@ -28,7 +28,14 @@ import type { EntityOption } from "@/features/lookups/api"
 import { DeliveryLimitsPanel } from "./delivery-limits-panel"
 import { capacityQuery, deliveryKeys, deliveryQuery, openOrderOptionsQuery, useSaveDelivery } from "./api"
 import type { DeliveryInput } from "./api"
-import { limitKindFromCode, overLimitMessage, sourceDateProblem, typedTons, type LimitNames } from "./limits"
+import {
+  extraOverOrder,
+  limitKindFromCode,
+  overLimitMessage,
+  sourceDateProblem,
+  typedTons,
+  type LimitNames,
+} from "./limits"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { isApiError } from "@/lib/api-client"
@@ -236,6 +243,8 @@ function DeliveryForm({
     capacity.data && !capacity.isPlaceholderData && !capacity.isFetching && paramsKey === liveKey
       ? capacity.data
       : null
+  /** Typed tons beyond what was ordered (allowed up to the order's tolerance). */
+  const extraTons = current ? extraOverOrder(current, tons ?? "") : null
 
   const material = order.data?.materialId.name ?? "this material"
   const poolOf = (c: SaleCapacity | null | undefined) =>
@@ -244,6 +253,7 @@ function DeliveryForm({
   const pool = poolOf(capacity.data)
   const names: LimitNames = {
     poNumber: order.data?.poNumber ?? po?.name ?? "this order",
+    tolerancePercent: order.data?.tolerancePercent ?? null,
     material,
     source: source?.name ?? null,
     saleDate,
@@ -652,7 +662,9 @@ function DeliveryForm({
                 label="Tons"
                 description={
                   current && current.poOpen && isPositive(current.maxAllowedTons)
-                    ? `Up to ${formatTons(current.maxAllowedTons, { unit: true })}`
+                    ? extraTons
+                      ? `${formatTons(extraTons, { unit: true })} more than ordered, within the order's tolerance (up to ${formatTons(current.maxAllowedTons, { unit: true })}). Extra tons are billed at the order rate.`
+                      : `Up to ${formatTons(current.maxAllowedTons, { unit: true })}`
                     : undefined
                 }
               >

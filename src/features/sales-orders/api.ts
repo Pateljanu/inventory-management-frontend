@@ -71,6 +71,7 @@ export type SalesOrderInput = {
   materialId: string
   quantityTons: string
   ratePerTon: string
+  tolerancePercent?: string
   lifecycleStatus?: POLifecycle
   notes?: string
 }
@@ -84,6 +85,15 @@ export function useSaveSalesOrder() {
         : api.post<Saved<SalesPO>>("/sales-pos", input)
       ).then((r) => r.data),
     // Orders drive open demand, "buy needed", the dashboard and the sidebar badge.
+    onSuccess: () => queryClient.invalidateQueries(),
+  })
+}
+
+/** Closes a short-delivered order at what was delivered (the rate stays). */
+export function useSettleOrder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.post<SalesPO>(`/sales-pos/${id}/settle`).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries(),
   })
 }

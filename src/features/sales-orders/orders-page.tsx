@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Ban, ClipboardList, Pencil, Plus, RotateCcw } from "lucide-react"
+import { Ban, CheckCheck, ClipboardList, Pencil, Plus, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/common/page-header"
 import { FilterBar, type FilterChip } from "@/components/common/filter-bar"
@@ -15,6 +15,7 @@ import { RecordCard } from "@/components/common/record-card"
 import { OrderSheet } from "./order-sheet"
 import { DeliverButton, OrderProgress } from "./order-parts"
 import { isOpenOrder, useOrderLifecycle } from "./order-lifecycle"
+import { canSettleOrder, settledShortBy } from "./tolerance"
 import { salesOrdersQuery } from "./api"
 import { ORDER_VIEWS, type OrderView, type SalesOrdersSearch } from "./search"
 import { useEntityOption } from "@/features/lookups/entity"
@@ -24,16 +25,33 @@ import { can } from "@/lib/permissions"
 import { describeRange } from "@/lib/fy"
 import { formatCount, formatDate, formatMoney, formatTons } from "@/lib/format"
 import { DEFAULT_PAGE_SIZE, resetPage } from "@/lib/list-search"
+import { isPositive } from "@/lib/decimal"
 import { cn } from "@/lib/utils"
 import type { SalesPO } from "@/types/api"
 
 const helper = createAppColumnHelper<SalesPO>()
 
+/** "ordered 30.000" under the tons of an order that was settled short. */
+function OrderedNote({ po }: { po: SalesPO }) {
+  if (!settledShortBy(po)) return null
+  return (
+    <span className="block text-xs text-muted-foreground">ordered {formatTons(po.originalQuantityTons)}</span>
+  )
+}
+
+/** "+1.200 extra" when more than ordered was delivered (within the tolerance). */
+function ExtraNote({ po }: { po: SalesPO }) {
+  if (!po.extraQuantityTons || !isPositive(po.extraQuantityTons)) return null
+  return (
+    <span className="block text-xs font-normal text-success">+{formatTons(po.extraQuantityTons)} extra</span>
+  )
+}
+
 export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
   const navigate = useNavigate({ from: "/sales-orders/" })
   const { user } = useSession()
   const canWrite = can(user, "write")
-  const { cancel, reopen } = useOrderLifecycle()
+  const { cancel, settle, reopen } = useOrderLifecycle()
   const [highlightId, highlight] = useHighlight()
 
   const view: OrderView = search.view ?? "open"
@@ -73,6 +91,9 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
     canWrite
       ? [
           { label: "Edit", icon: Pencil, onSelect: () => setSearch({ edit: po._id, create: undefined }) },
+          ...(canSettleOrder(po)
+            ? [{ label: "Settle (close short)", icon: CheckCheck, onSelect: () => void settle(po) }]
+            : []),
           po.lifecycleStatus === "ACTIVE"
             ? {
                 label: "Cancel order",
@@ -115,7 +136,12 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
     }),
     helper.accessor("quantityTons", {
       header: "Ordered (t)",
-      cell: (info) => formatTons(info.getValue()),
+      cell: (info) => (
+        <>
+          {formatTons(info.getValue())}
+          <OrderedNote po={info.row.original} />
+        </>
+      ),
       meta: { align: "end", label: "Ordered" },
     }),
     helper.accessor("soldQuantityTons", {
@@ -125,7 +151,12 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
     }),
     helper.accessor("remainingQuantityTons", {
       header: "Left (t)",
-      cell: (info) => <span className="font-medium">{formatTons(info.getValue())}</span>,
+      cell: (info) => (
+        <span className="font-medium">
+          {formatTons(info.getValue())}
+          <ExtraNote po={info.row.original} />
+        </span>
+      ),
       meta: { align: "end", label: "Left to deliver" },
     }),
     helper.display({
@@ -298,6 +329,7 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
               <span>
                 <span className="font-semibold">{formatTons(po.remainingQuantityTons, { unit: true })}</span>{" "}
                 <span className="text-muted-foreground">left of {formatTons(po.quantityTons)}</span>
+                <ExtraNote po={po} />
               </span>
             </div>
             <OrderProgress po={po} />

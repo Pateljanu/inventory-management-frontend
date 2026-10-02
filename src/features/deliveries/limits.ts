@@ -53,7 +53,8 @@ export function typedTons(value: string): string | null {
 export function assessLimits(capacity: SaleCapacity, tonsText: string): LimitAssessment {
   const typed = typedTons(tonsText)
   const limits: [LimitKind, string][] = [
-    ["PO", capacity.remainingQuantityTons],
+    // The order's tolerance is included; older servers only send remainingQuantityTons.
+    ["PO", capacity.poAllowanceTons ?? capacity.remainingQuantityTons],
     ["STOCK", capacity.availableStockTons],
     ...(capacity.availableSourceStockTons !== null
       ? [["SOURCE_STOCK", capacity.availableSourceStockTons] as [LimitKind, string]]
@@ -81,6 +82,8 @@ export function assessLimits(capacity: SaleCapacity, tonsText: string): LimitAss
 
 export type LimitNames = {
   poNumber: string
+  /** The order's tolerance in percent, when it has one. */
+  tolerancePercent?: string | null
   material: string
   source?: string | null
   /** The delivery date, when known. */
@@ -115,9 +118,29 @@ export function sourceDateProblem(names: LimitNames): SourceDateProblem | null {
 
 /** What each limit is called on screen: "Left on PO-0142", "HMS 1 in yard", "Shree Ganesh Metals stock". */
 export function limitLabel(kind: LimitKind, names: LimitNames): string {
-  if (kind === "PO") return `Left on ${names.poNumber}`
+  if (kind === "PO") {
+    // Short: the panel row is narrow. The over-limit message spells the tolerance out.
+    const percent =
+      names.tolerancePercent && isPositive(names.tolerancePercent) ? Number(names.tolerancePercent) : 0
+    return percent ? `Left on ${names.poNumber} (±${percent}%)` : `Left on ${names.poNumber}`
+  }
   if (kind === "STOCK") return `${names.material} in yard`
   return `${names.source ?? "Supplier"} stock`
+}
+
+/** "±5% tolerance", or null when the order has none. */
+function toleranceText(names: LimitNames): string | null {
+  return names.tolerancePercent && isPositive(names.tolerancePercent)
+    ? `±${Number(names.tolerancePercent)}% tolerance`
+    : null
+}
+
+/** "1.200 t more than ordered" when the typed tons use part of the order's tolerance. */
+export function extraOverOrder(capacity: SaleCapacity, tonsText: string): string | null {
+  const typed = typedTons(tonsText)
+  if (typed === null) return null
+  const extra = toBig(typed).minus(toBig(capacity.remainingQuantityTons))
+  return extra.gt(0) ? qty(extra) : null
 }
 
 /** "Limited by …" wording for the binding limit. */
@@ -134,7 +157,7 @@ export function overLimitMessage(kind: LimitKind, maxAllowed: string, names: Lim
   if (kind === "PO") {
     return none
       ? `${names.poNumber} is fully delivered. Choose another order.`
-      : `${names.poNumber} has only ${maxTons} left to deliver. Enter ${maxTons} or less.`
+      : `${names.poNumber} has only ${maxTons} left to deliver${toleranceText(names) ? `, including its ${toleranceText(names)}` : ""}. Enter ${maxTons} or less.`
   }
   if (kind === "STOCK") {
     return none

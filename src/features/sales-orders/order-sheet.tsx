@@ -17,7 +17,8 @@ import { FormField } from "@/components/common/form/form-field"
 import { ErrorSummary } from "@/components/common/form/error-summary"
 import { DateInput } from "@/components/common/form/date-input"
 import { EntityCombobox } from "@/components/common/form/entity-combobox"
-import { RateInput, TonsInput } from "@/components/common/form/tons-input"
+import { DecimalInput, RateInput, TonsInput } from "@/components/common/form/tons-input"
+import { DEFAULT_TOLERANCE_PERCENT, MAX_TOLERANCE_PERCENT, maxDeliverable } from "./tolerance"
 import { ErrorState } from "@/components/common/error-state"
 import { salesOrderQuery, useSaveSalesOrder, type SalesOrderInput } from "./api"
 import { isApiError } from "@/lib/api-client"
@@ -58,11 +59,28 @@ const schema = z.object({
       (v) => v === "" || (RATE.test(v) && isPositive(v)),
       "Enter the rate as a number above zero, like 38,500"
     ),
+  // Missing in drafts saved before the field existed.
+  tolerancePercent: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || (RATE.test(v) && Number(v) <= MAX_TOLERANCE_PERCENT),
+      `Enter a percentage from 0 to ${MAX_TOLERANCE_PERCENT}, like 5`
+    ),
   notes: z.string().trim().max(1000, "Keep notes under 1,000 characters"),
 })
 
 type Values = z.input<typeof schema>
-const ORDER = ["poNumber", "poDate", "buyer", "material", "quantityTons", "ratePerTon", "notes"] as const
+const ORDER = [
+  "poNumber",
+  "poDate",
+  "buyer",
+  "material",
+  "quantityTons",
+  "ratePerTon",
+  "tolerancePercent",
+  "notes",
+] as const
 const LAST_KEY = "sales-order"
 type LastUsed = { buyer?: EntityOption }
 
@@ -75,6 +93,7 @@ function toValues(po?: SalesPO): Values {
       material: null,
       quantityTons: "",
       ratePerTon: "",
+      tolerancePercent: DEFAULT_TOLERANCE_PERCENT,
       notes: "",
     }
   }
@@ -85,6 +104,7 @@ function toValues(po?: SalesPO): Values {
     material: { _id: po.materialId._id, name: po.materialId.name },
     quantityTons: toBig(po.quantityTons).toString(),
     ratePerTon: toBig(po.ratePerTon).toString(),
+    tolerancePercent: toBig(po.tolerancePercent ?? "0").toString(),
     notes: po.notes ?? "",
   }
 }
@@ -96,6 +116,7 @@ const toInput = (v: Values): SalesOrderInput => ({
   materialId: v.material!._id,
   quantityTons: v.quantityTons,
   ratePerTon: v.ratePerTon,
+  tolerancePercent: v.tolerancePercent === undefined ? DEFAULT_TOLERANCE_PERCENT : v.tolerancePercent || "0",
   notes: v.notes.trim(),
 })
 
@@ -168,7 +189,10 @@ function OrderForm({
   })
   const { control, formState } = form
   const draft = useFormDraft(form, { name: "sales-order", context: "new", enabled: !isEdit })
-  const [quantity, rate] = useWatch({ control, name: ["quantityTons", "ratePerTon"] })
+  const [quantity, rate, tolerance] = useWatch({
+    control,
+    name: ["quantityTons", "ratePerTon", "tolerancePercent"],
+  })
   const total = TONS.test(quantity) && RATE.test(rate) ? amountFrom(quantity, rate) : null
   const delivered = order && isPositive(order.soldQuantityTons) ? order.soldQuantityTons : null
 
@@ -195,7 +219,7 @@ function OrderForm({
           )
           form.setError("quantityTons", {
             type: "server",
-            message: `${formatTons(sold, { unit: true })} has already been delivered on this order. Enter ${formatTons(sold, { unit: true })} or more.`,
+            message: `${formatTons(sold, { unit: true })} has already been delivered on this order. Ordered tons plus the tolerance must cover it.`,
           })
         } else if (code === "PO_DATE_AFTER_SALES") {
           const first = String(
@@ -364,6 +388,31 @@ function OrderForm({
                 )}
               </FormField>
             </div>
+            <FormField
+              control={control}
+              name="tolerancePercent"
+              label="Tolerance (±)"
+              description={
+                quantity && isPositive(quantity)
+                  ? `Deliveries can go up to ${formatTons(maxDeliverable(quantity, tolerance), { unit: true })}. Extra tons are billed at the same rate.`
+                  : "How far deliveries may go beyond the ordered tons."
+              }
+            >
+              {(field, props) => (
+                <DecimalInput
+                  {...props}
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  decimals={2}
+                  suffix="%"
+                  placeholder="0"
+                  className="sm:max-w-40"
+                />
+              )}
+            </FormField>
             <div className="flex items-baseline justify-between rounded-lg bg-muted/60 px-3 py-2.5">
               <span className="text-sm text-muted-foreground">Order value</span>
               <output className="text-lg font-semibold tabular-nums" aria-live="polite">

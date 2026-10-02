@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   assessLimits,
+  extraOverOrder,
   limitKindFromCode,
   limitLabel,
   overLimitMessage,
@@ -140,5 +141,39 @@ describe("limit copy", () => {
     expect(limitKindFromCode("INSUFFICIENT_SOURCE_STOCK")).toBe("SOURCE_STOCK")
     expect(limitKindFromCode("PO_QUANTITY_EXCEEDED")).toBe("PO")
     expect(limitKindFromCode("DUPLICATE_VALUE")).toBeNull()
+  })
+})
+
+describe("order tolerance", () => {
+  // 30 t ordered at ±5%, nothing delivered yet: up to 31.500 t may go.
+  const withTolerance: SaleCapacity = {
+    ...capacity,
+    remainingQuantityTons: "30.000",
+    tolerancePercent: "5.00",
+    poAllowanceTons: "31.500",
+    availableSourceStockTons: "80.000",
+    maxAllowedTons: "31.500",
+    limitedBy: "PO",
+  }
+  const names = { poNumber: "PO-01", material: "Fish Cut", tolerancePercent: "5.00" }
+
+  it("uses ordered + tolerance as the order's limit", () => {
+    const a = assessLimits(withTolerance, "31.2")
+    expect(a.rows[0]).toMatchObject({ kind: "PO", value: "31.500", level: "near", binding: true })
+    expect(a.level).toBe("near")
+    expect(assessLimits(withTolerance, "31.6").level).toBe("over")
+  })
+
+  it("says how much goes beyond the order", () => {
+    expect(extraOverOrder(withTolerance, "31.2")).toBe("1.200")
+    expect(extraOverOrder(withTolerance, "30")).toBeNull()
+    expect(extraOverOrder(withTolerance, "")).toBeNull()
+  })
+
+  it("mentions the tolerance in the order's limit", () => {
+    expect(limitLabel("PO", names)).toBe("Left on PO-01 (±5%)")
+    expect(overLimitMessage("PO", "31.500", names)).toBe(
+      "PO-01 has only 31.500 t left to deliver, including its ±5% tolerance. Enter 31.500 t or less."
+    )
   })
 })
