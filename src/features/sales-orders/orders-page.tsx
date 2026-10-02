@@ -178,8 +178,20 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
     helper.display({
       id: "deliver",
       header: () => <span className="sr-only">Deliver</span>,
-      cell: (info) =>
-        canWrite && isOpenOrder(info.row.original) ? <DeliverButton po={info.row.original} /> : null,
+      cell: (info) => {
+        const po = info.row.original
+        if (!canWrite || !isOpenOrder(po)) return null
+        return (
+          <div className="flex justify-end gap-2">
+            {canSettleOrder(po) ? (
+              <Button size="sm" variant="outline" onClick={() => void settle(po)}>
+                <CheckCheck /> Settle
+              </Button>
+            ) : null}
+            <DeliverButton po={po} />
+          </div>
+        )
+      },
       meta: { className: "w-24" },
     }),
     helper.display({
@@ -334,7 +346,14 @@ export function OrdersPage({ search }: { search: SalesOrdersSearch }) {
             </div>
             <OrderProgress po={po} />
             {canWrite && isOpenOrder(po) ? (
-              <DeliverButton po={po} size="default" className="mt-1 h-11 w-full" />
+              <div className="mt-1 flex gap-2">
+                {canSettleOrder(po) ? (
+                  <Button variant="outline" className="h-11 flex-1" onClick={() => void settle(po)}>
+                    <CheckCheck /> Settle
+                  </Button>
+                ) : null}
+                <DeliverButton po={po} size="default" className="h-11 flex-1" />
+              </div>
             ) : null}
           </RecordCard>
         )}
