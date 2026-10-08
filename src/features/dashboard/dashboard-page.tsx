@@ -71,6 +71,13 @@ export function DashboardPage({ search }: { search: DashboardSearch }) {
     .filter((m) => isPositive(m.purchaseRequiredTons))
     .sort((a, b) => cmp(b.purchaseRequiredTons, a.purchaseRequiredTons))
   const buyNeeded = short.reduce((sum, m) => plus(sum, m.purchaseRequiredTons), toBig(0)).toFixed(3)
+  // Extra stock is per material: one material's surplus cannot fill another's shortage, so the
+  // two totals are shown side by side, never netted.
+  const extra = materials.reduce((sum, m) => plus(sum, m.extraStockTons), toBig(0)).toFixed(3)
+  const hasExtra = isPositive(extra)
+  // Shortage reads as a minus, surplus as a plus.
+  const position = short.length ? toBig(buyNeeded).neg() : extra
+  const sign = !short.length && hasExtra ? "+" : ""
 
   const orders = openOrders.data?.items
   const orderTotal = openOrders.data?.meta.total
@@ -132,12 +139,12 @@ export function DashboardPage({ search }: { search: DashboardSearch }) {
               href="/supplier-stock"
             />
             <StatCard
-              label="Buy needed"
+              label={short.length || !hasExtra ? "Buy needed" : "Extra stock"}
               icon={<TriangleAlert className="size-4" />}
               tone={short.length ? "warning" : "default"}
               loading={main.isPending}
-              value={formatTonsCompact(buyNeeded)}
-              exactValue={formatTons(buyNeeded, { unit: true })}
+              value={sign + formatTonsCompact(position)}
+              exactValue={sign + formatTons(position, { unit: true })}
               delta={
                 short.length
                   ? {
@@ -149,12 +156,19 @@ export function DashboardPage({ search }: { search: DashboardSearch }) {
               }
               footnote={
                 short.length ? (
-                  <span className="line-clamp-2">
-                    {short
-                      .slice(0, 3)
-                      .map((m) => `${m.materialName} ${formatTons(m.purchaseRequiredTons, { unit: true })}`)
-                      .join(" · ")}
-                  </span>
+                  <>
+                    <span className="line-clamp-2">
+                      {short
+                        .slice(0, 3)
+                        .map((m) => `${m.materialName} ${formatTons(m.purchaseRequiredTons, { unit: true })}`)
+                        .join(" · ")}
+                    </span>
+                    {hasExtra ? (
+                      <span className="block">+{formatTons(extra, { unit: true })} extra in other materials</span>
+                    ) : null}
+                  </>
+                ) : hasExtra ? (
+                  "Extra after covering all open orders"
                 ) : (
                   "Stock covers all open orders"
                 )
