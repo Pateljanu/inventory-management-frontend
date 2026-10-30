@@ -17,7 +17,7 @@ import { sourceStockQuery } from "@/features/reports/api"
 import { fetchSettlePreview, useSettlePool } from "@/features/purchases/api"
 import { useSession } from "@/features/auth/session"
 import { useEntityOption } from "@/features/lookups/entity"
-import { isPositive, percentOf, plus, toBig } from "@/lib/decimal"
+import { isNegative, isPositive, isZero, minOf, percentOf, plus, toBig } from "@/lib/decimal"
 import { businessToday } from "@/lib/dates"
 import { errorMessage } from "@/lib/errors"
 import { DASH, formatCount, formatDate, formatMoney, formatRate, formatTons } from "@/lib/format"
@@ -43,14 +43,50 @@ function LeftBar({ row }: { row: SourceStockRow }) {
   )
 }
 
-/** The confirm box of a settle: what is left and exactly which purchases change. */
+/** "1.500 extra" when more was delivered than bought, else the tons still available. */
+function Available({ row, unit = false }: { row: SourceStockRow; unit?: boolean }) {
+  const over = isNegative(row.availableTons)
+  const tons = formatTons(toBig(row.availableTons).abs().toFixed(3), { unit })
+  // Tolerance not used yet: how far deliveries may still go beyond what was bought.
+  const spare = plus(row.toleranceTons ?? "0", minOf(row.availableTons, 0)).toFixed(3)
+  return (
+    <>
+      <span className={cn("font-semibold", over && "text-warning-foreground dark:text-warning")}>
+        {over ? `${tons} extra` : unit ? `${tons} available` : tons}
+      </span>
+      {isPositive(spare) ? (
+        <span className="block text-xs text-muted-foreground">+{formatTons(spare)} tolerance</span>
+      ) : null}
+    </>
+  )
+}
+
+/** What a settle moves, in words: "2.000 t taken off", "1.500 t added", or both. */
+function settleMoves(plan: SettlePlan) {
+  return [
+    isPositive(plan.leftTons) ? `${formatTons(plan.leftTons, { unit: true })} taken off` : null,
+    plan.extraTons && isPositive(plan.extraTons)
+      ? `${formatTons(plan.extraTons, { unit: true })} added`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
+}
+
+/** The confirm box of a settle: what is left or over and exactly which purchases change. */
 function SettleSummary({ plan }: { plan: SettlePlan }) {
+  const extra = plan.extraTons && isPositive(plan.extraTons) ? plan.extraTons : null
   return (
     <div className="space-y-3">
       <p>
-        {formatTons(plan.leftTons, { unit: true })} is still shown as left. Settling sets the purchase to what
-        was actually delivered ({formatTons(plan.usedTons, { unit: true })}), so nothing is left. The rate
-        stays the same; the amount follows the tons.
+        {isPositive(plan.leftTons)
+          ? `${formatTons(plan.leftTons, { unit: true })} is still shown as left. `
+          : null}
+        {extra
+          ? `The supplier sent ${formatTons(extra, { unit: true })} more than was bought, within the tolerance. `
+          : null}
+        {`Settling sets the purchase to what was actually delivered (${formatTons(plan.usedTons, { unit: true })}), so nothing is left or over, and it takes no more after that. `}
+        The rate stays the same; the amount follows the tons.
       </p>
       <ul className="max-h-60 divide-y overflow-y-auto rounded-md border text-foreground">
         {plan.changes.map((c) => (
@@ -75,7 +111,8 @@ function SettleSummary({ plan }: { plan: SettlePlan }) {
 
 /**
  * Stock by the supplier it was bought from: bought, used by deliveries, and still available. A
- * delivery can only draw on a supplier's available stock, so this answers "whose scrap can I send?".
+ * delivery can only draw on a supplier's available stock plus the tolerance of its purchases, so
+ * this answers "whose scrap can I send?".
  */
 export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
   const navigate = useNavigate({ from: "/supplier-stock/" })
@@ -94,7 +131,7 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
   const canSettle = can(user, "write") && !asOf
   const rowKey = (r: SourceStockRow) => `${r.sourceCompanyId}:${r.materialId}`
 
-  /** Shows exactly which purchases change, then trims them to what was delivered. */
+  /** Shows exactly which purchases change, then sets them to what was delivered. */
   const settle = async (row: SourceStockRow) => {
     const pool = { companyId: row.sourceCompanyId, materialId: row.materialId }
     const name = `${row.sourceCompanyName ?? "Supplier"} · ${row.materialName ?? "material"}`
@@ -109,26 +146,27 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
       setPreparing(null)
     }
     if (!plan.changes.length) {
-      notify.info("Nothing left to settle", { description: `${name} has no stock left.` })
+      notify.info("Nothing to settle", { description: `${name} already matches what was delivered.` })
       return
     }
     const done = await confirm({
       title: `Settle ${name}?`,
       description: <SettleSummary plan={plan} />,
-      confirmLabel: `Settle ${formatTons(plan.leftTons, { unit: true })}`,
+      confirmLabel: "Settle",
       cancelLabel: "Keep as is",
       onConfirm: () => settlePool.mutateAsync(pool),
     })
     if (done) {
       const count = plan.changes.length
       notify.success(`${name} settled`, {
-        description: `${formatTons(plan.leftTons, { unit: true })} taken off ${count} ${count === 1 ? "purchase" : "purchases"}.`,
+        description: `${settleMoves(plan)} on ${count} ${count === 1 ? "purchase" : "purchases"}.`,
       })
     }
   }
 
+  // Left over, or delivered beyond what was bought: either way the purchases need settling.
   const settleButton = (row: SourceStockRow) =>
-    isPositive(row.availableTons) ? (
+    !isZero(row.availableTons) ? (
       <Button
         type="button"
         variant="outline"
@@ -160,13 +198,15 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
   const needle = search.q?.toLowerCase()
   const rows = (query.data ?? []).filter(
     (r) =>
-      (search.used || isPositive(r.availableTons)) &&
+      (search.used || !isZero(r.availableTons)) &&
       (!needle || `${r.sourceCompanyName} ${r.materialName}`.toLowerCase().includes(needle))
   )
   const page = search.page ?? 1
   const limit = search.limit ?? DEFAULT_PAGE_SIZE
   const pageRows = rows.slice((page - 1) * limit, page * limit)
-  const available = rows.reduce((sum, r) => plus(sum, r.availableTons), toBig(0)).toFixed(3)
+  const available = rows
+    .reduce((sum, r) => (isPositive(r.availableTons) ? plus(sum, r.availableTons) : sum), toBig(0))
+    .toFixed(3)
   const filtered = Boolean(search.q || search.asOf || search.supplier || search.material)
 
   const columns: AppColumnDef<SourceStockRow>[] = helper.columns([
@@ -208,7 +248,7 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
     }),
     helper.accessor("availableTons", {
       header: "Available (t)",
-      cell: (info) => <span className="font-semibold">{formatTons(info.getValue())}</span>,
+      cell: (info) => <Available row={info.row.original} />,
       meta: { align: "end", label: "Available" },
     }),
     helper.display({
@@ -265,7 +305,7 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
         title="Supplier stock"
         description={`Stock bought from each supplier that deliveries haven't used yet, ${
           asOf ? `on ${formatDate(asOf)}` : "today"
-        }. A delivery can only use what is available here.`}
+        }. A delivery can only use what is available here, plus the tolerance of the purchases.`}
       />
 
       <FilterBar
@@ -342,8 +382,8 @@ export function SupplierStockPage({ search }: { search: SupplierStockSearch }) {
           >
             <div className="text-muted-foreground">{r.materialName}</div>
             <div className="flex items-center justify-between gap-2">
-              <span className="font-semibold tabular-nums">
-                {formatTons(r.availableTons, { unit: true })} available
+              <span className="tabular-nums">
+                <Available row={r} unit />
               </span>
               <LeftBar row={r} />
             </div>

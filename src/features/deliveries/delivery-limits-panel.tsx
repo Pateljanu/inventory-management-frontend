@@ -2,7 +2,7 @@ import { CircleX, CloudOff, Info, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { minus } from "@/lib/decimal"
+import { isPositive, minus, plus } from "@/lib/decimal"
 import { formatDate, formatTons } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import {
@@ -79,8 +79,8 @@ export function DeliveryLimitsPanel({
           />
           <PopoverContent className="w-72 text-sm">
             A delivery can&apos;t be more than what is left on the order, the material in the yard, or the
-            stock bought from the chosen supplier. For a past date, stock already used by later deliveries is
-            not counted.
+            stock bought from the chosen supplier plus its purchase tolerance. For a past date, stock already
+            used by later deliveries is not counted.
           </PopoverContent>
         </Popover>
       </header>
@@ -117,14 +117,18 @@ export function DeliveryLimitsPanel({
 }
 
 /**
- * Where the chosen supplier's stock stands on the delivery date: bought, already delivered,
- * held back for later deliveries, free now, and when it was bought.
+ * Where the chosen supplier's stock stands on the delivery date: bought, the tolerance on top,
+ * already delivered, held back for later deliveries, free now, and when it was bought.
  */
 function SupplierStock({ pool, asOf, updating }: { pool: SaleSource; asOf: string; updating: boolean }) {
   // Headroom can be below bought − used: later-dated deliveries already count on some of it.
-  const held = minus(minus(pool.purchasedTons, pool.usedTons), pool.availableTons)
+  const tolerance = pool.toleranceTons ?? "0"
+  const held = minus(minus(plus(pool.purchasedTons, tolerance), pool.usedTons), pool.availableTons)
   const rows: [string, string][] = [
     ["Bought", formatTons(pool.purchasedTons, { unit: true })],
+    ...(isPositive(tolerance)
+      ? [["Tolerance", `+${formatTons(tolerance, { unit: true })}`] as [string, string]]
+      : []),
     ["Delivered from it", formatTons(pool.usedTons, { unit: true })],
     ...(held.gt(0)
       ? [["Held for later deliveries", formatTons(held.toFixed(3), { unit: true })] as [string, string]]

@@ -96,7 +96,9 @@ export type Purchase = {
   quantityTons: Decimal
   ratePerTon: Decimal
   totalAmount: Decimal
-  /** Tons first booked, kept when a settle trimmed quantityTons to what was delivered. */
+  /** Share of the bought tons the supplier may send beyond them; missing = none. */
+  tolerancePercent?: Decimal
+  /** Tons first booked, kept when a settle set quantityTons to what was delivered. */
   bookedTons?: Decimal
   vehicleNumber?: string
   invoiceNumber?: string
@@ -111,7 +113,10 @@ export type SettlePlan = {
   materialId: string
   purchasedTons: Decimal
   usedTons: Decimal
+  /** Tons taken off purchases that were not fully delivered. */
   leftTons: Decimal
+  /** Tons added to purchases the supplier over-filled (within their tolerance). */
+  extraTons?: Decimal
   changes: {
     purchaseId: string
     purchaseDate: string
@@ -201,12 +206,14 @@ export type SaleSource = {
   sourceCompanyId: string
   name: string
   isActive: boolean
-  /** Free for a delivery on the sale date (headroom: later deliveries are already held back). */
+  /** Free for a delivery on the sale date, tolerance included (headroom: later deliveries are already held back). */
   availableTons: Decimal
   /** Bought from them up to the sale date. */
   purchasedTons: Decimal
   /** Already delivered from their stock up to the sale date. */
   usedTons: Decimal
+  /** What they may send beyond purchasedTons (the purchases' tolerance). */
+  toleranceTons?: Decimal
   /** Their first purchase of this material ever; null if never bought. */
   firstPurchaseDate: string | null
   /** Their latest purchase on or before the sale date; null if none yet. */
@@ -259,7 +266,10 @@ export type SourceStockRow = {
   materialName: string | null
   purchasedTons: Decimal
   usedForSalesTons: Decimal
+  /** Bought − used; negative while more was delivered than bought (within the tolerance). */
   availableTons: Decimal
+  /** How far deliveries may go beyond purchasedTons. */
+  toleranceTons?: Decimal
 }
 
 export type CompanySummary = Dashboard & {

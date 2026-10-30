@@ -53,6 +53,7 @@ export type PurchaseInput = {
   materialId: string
   quantityTons: string
   ratePerTon: string
+  tolerancePercent?: string
   vehicleNumber?: string
   invoiceNumber?: string
   notes?: string
@@ -79,7 +80,7 @@ export const fetchSettlePreview = (pool: SettlePool) =>
   api.get<SettlePlan>("/purchases/settle", pool).then((r) => r.data)
 
 /**
- * Sets a supplier pool's leftover to zero by trimming its purchases to what was delivered.
+ * Sets a supplier pool's leftover (or overrun) to zero by setting its purchases to what was delivered.
  * Purchases, stock, supplier stock and every report change, so everything is refetched.
  */
 export function useSettlePool() {

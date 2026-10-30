@@ -18,10 +18,15 @@ import { FormField } from "@/components/common/form/form-field"
 import { ErrorSummary } from "@/components/common/form/error-summary"
 import { DateInput } from "@/components/common/form/date-input"
 import { EntityCombobox } from "@/components/common/form/entity-combobox"
-import { RateInput, TonsInput } from "@/components/common/form/tons-input"
+import { DecimalInput, RateInput, TonsInput } from "@/components/common/form/tons-input"
 import { ErrorState } from "@/components/common/error-state"
 import { lastPurchaseQuery, purchaseQuery, useSavePurchase, type PurchaseInput } from "./api"
 import type { EntityOption } from "@/features/lookups/api"
+import {
+  DEFAULT_TOLERANCE_PERCENT,
+  MAX_TOLERANCE_PERCENT,
+  maxDeliverable,
+} from "@/features/sales-orders/tolerance"
 import { isApiError } from "@/lib/api-client"
 import { applyServerErrors, collectErrors } from "@/lib/form-errors"
 import { amountFrom, isPositive, toBig } from "@/lib/decimal"
@@ -54,6 +59,14 @@ const schema = z.object({
       (v) => v === "" || (RATE.test(v) && isPositive(v)),
       "Enter the rate as a number above zero, like 34,500"
     ),
+  // Missing in drafts saved before the field existed.
+  tolerancePercent: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || (RATE.test(v) && Number(v) <= MAX_TOLERANCE_PERCENT),
+      `Enter a percentage from 0 to ${MAX_TOLERANCE_PERCENT}, like 5`
+    ),
   vehicleNumber: z.string().max(30, "Keep the vehicle number under 30 characters"),
   invoiceNumber: z.string().trim().max(80, "Keep the invoice number under 80 characters"),
   notes: z.string().trim().max(1000, "Keep notes under 1,000 characters"),
@@ -66,6 +79,7 @@ const ORDER = [
   "material",
   "quantityTons",
   "ratePerTon",
+  "tolerancePercent",
   "vehicleNumber",
   "invoiceNumber",
   "notes",
@@ -81,6 +95,8 @@ function fromPurchase(p: Purchase, { keepDate }: { keepDate: boolean }): Values 
     material: { _id: p.materialId._id, name: p.materialId.name },
     quantityTons: keepDate ? toBig(p.quantityTons).toString() : "",
     ratePerTon: toBig(p.ratePerTon).toString(),
+    // A repeat is a new purchase, so it starts from the default again.
+    tolerancePercent: keepDate ? toBig(p.tolerancePercent ?? "0").toString() : DEFAULT_TOLERANCE_PERCENT,
     vehicleNumber: p.vehicleNumber ?? "",
     invoiceNumber: keepDate ? (p.invoiceNumber ?? "") : "",
     notes: keepDate ? (p.notes ?? "") : "",
@@ -95,6 +111,7 @@ function blankValues(material?: EntityOption): Values {
     material: material ?? last?.material ?? null,
     quantityTons: "",
     ratePerTon: "",
+    tolerancePercent: DEFAULT_TOLERANCE_PERCENT,
     vehicleNumber: "",
     invoiceNumber: "",
     notes: "",
@@ -108,6 +125,8 @@ function toInput(v: Values): PurchaseInput {
     materialId: v.material!._id,
     quantityTons: v.quantityTons,
     ratePerTon: v.ratePerTon,
+    tolerancePercent:
+      v.tolerancePercent === undefined ? DEFAULT_TOLERANCE_PERCENT : v.tolerancePercent || "0",
     vehicleNumber: normalizeCode(v.vehicleNumber),
     invoiceNumber: v.invoiceNumber.trim(),
     notes: v.notes.trim(),
@@ -214,9 +233,9 @@ function PurchaseForm({
     context: draftContext ?? "",
     enabled: Boolean(draftContext),
   })
-  const [supplier, material, quantity, rate] = useWatch({
+  const [supplier, material, quantity, rate, tolerance] = useWatch({
     control,
-    name: ["supplier", "material", "quantityTons", "ratePerTon"],
+    name: ["supplier", "material", "quantityTons", "ratePerTon", "tolerancePercent"],
   })
 
   // Smart default: the last rate paid to this supplier for this material.
@@ -243,13 +262,14 @@ function PurchaseForm({
         description: `${formatTons(saved.quantityTons, { unit: true })} of ${values.material!.name} from ${values.supplier!.name} · ${formatMoney(saved.totalAmount)}`,
       })
       if (another) {
-        // Next truck: keep date, supplier, material and the rate just used; clear the rest.
+        // Next truck: keep date, supplier, material, rate and tolerance just used; clear the rest.
         form.reset({
           ...blankValues(),
           purchaseDate: values.purchaseDate,
           supplier: values.supplier,
           material: values.material,
           ratePerTon: values.ratePerTon,
+          tolerancePercent: values.tolerancePercent,
         })
         setLastUsed({ supplier: values.supplier!, material: values.material! })
         window.setTimeout(() => form.setFocus("quantityTons"), 50)
@@ -438,6 +458,31 @@ function PurchaseForm({
                 )}
               </FormField>
             </div>
+            <FormField
+              control={control}
+              name="tolerancePercent"
+              label="Tolerance (±)"
+              description={
+                TONS.test(quantity) && isPositive(quantity)
+                  ? `Deliveries can take up to ${formatTons(maxDeliverable(quantity, tolerance), { unit: true })} from this purchase. Settle the supplier's stock to bill the extra tons at the same rate.`
+                  : "How far the supplier may go beyond the bought tons."
+              }
+            >
+              {(field, props) => (
+                <DecimalInput
+                  {...props}
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  decimals={2}
+                  suffix="%"
+                  placeholder="0"
+                  className="sm:max-w-40"
+                />
+              )}
+            </FormField>
             <div className="flex items-baseline justify-between rounded-lg bg-muted/60 px-3 py-2.5">
               <span className="text-sm text-muted-foreground">Amount</span>
               <output className="text-lg font-semibold tabular-nums" aria-live="polite">
